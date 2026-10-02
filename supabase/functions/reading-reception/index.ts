@@ -12,11 +12,12 @@ type ReviewExcerpt = {
   reviewer: string | null;
   outlet: string;
   excerpt: string;
+  url?: string;
 };
 
 type ReceptionResult = {
   reviews: ReviewExcerpt[];
-  source: 'bookmarks' | 'publisher' | null;
+  source: 'bookmarks' | 'reviews' | 'publisher' | null;
   sourceUrl: string | null;
   isbn13?: string | null;
 };
@@ -54,9 +55,9 @@ Deno.serve(async (req: Request) => {
     const cacheAge = book.critical_reception_fetched_at
       ? Date.now() - new Date(book.critical_reception_fetched_at).getTime()
       : Infinity;
-    const cacheTtl = cachedReviews.length ? 7 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+    const cacheTtl = 7 * 24 * 60 * 60 * 1000;
 
-    if (cacheAge < cacheTtl) {
+    if (cachedReviews.length && cacheAge >= 0 && cacheAge < cacheTtl) {
       return json({
         reviews: cachedReviews,
         source: inferSource(book.critical_reception_source_url),
@@ -65,9 +66,28 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    let result = await fetchBookMarksReception(book.title, book.author, book.bookmarks_url);
+    let failures = 0;
+    async function attempt(load: () => Promise<ReceptionResult>): Promise<ReceptionResult> {
+      try { return await load(); }
+      catch (error) {
+        failures += 1;
+        console.warn('Reading review source unavailable', String(error));
+        return { reviews: [], source: null, sourceUrl: null };
+      }
+    }
+    const [bookMarksResult, professionalResult] = await Promise.all([
+      attempt(() => fetchBookMarksReception(book.title, book.author, book.bookmarks_url)),
+      attempt(() => fetchProfessionalReception(book.title, book.author, book.isbn13)),
+    ]);
+    let result = bookMarksResult.reviews.length ? bookMarksResult : professionalResult;
     if (!result.reviews.length) {
-      result = await fetchHachettePraise(book.title, book.author, book.isbn13);
+      result = await attempt(() => fetchHachettePraise(book.title, book.author, book.isbn13));
+    }
+    // An unavailable source is not evidence that reviews do not exist. Never persist negative results.
+    if (!result.reviews.length) {
+      return failures
+        ? json({ error: 'Review sources are temporarily unavailable' }, 503)
+        : json({ ...result, cached: false });
     }
 
     const fetchedAt = new Date().toISOString();
@@ -94,43 +114,47 @@ Deno.serve(async (req: Request) => {
 });
 
 async function fetchBookMarksReception(title: string, author: string, knownUrl?: string | null): Promise<ReceptionResult> {
-  const directCandidates = bookMarksCandidates(title, knownUrl);
-  const direct = await tryBookMarksCandidates(directCandidates, title, author);
-  if (direct.reviews.length) return direct;
+  let failed = false;
+  try {
+    const direct = await tryBookMarksCandidates(bookMarksCandidates(title, knownUrl), title, author);
+    if (direct.reviews.length) return direct;
+  } catch { failed = true; }
 
   const discovered: string[] = [];
-  for (const query of [...new Set([`${title} ${author}`.trim(), title].filter(Boolean))]) {
-    discovered.push(...await discoverBookMarksViaWpApi(query));
-
-    const searchHtml = await fetchHtml(`https://bookmarks.reviews/?s=${encodeURIComponent(query)}`);
-    if (searchHtml) discovered.push(...extractBookMarksReviewLinks(searchHtml));
-  }
-
-  const searched = await tryBookMarksCandidates([...new Set(discovered)].slice(0, 16), title, author);
-  if (searched.reviews.length) return searched;
-
+  const queries = [...new Set([`${title} ${author}`.trim(), title].filter(Boolean))];
+  await Promise.all(queries.map(async query => {
+    const [api, search] = await Promise.allSettled([
+      discoverBookMarksViaWpApi(query),
+      fetchHtml(`https://bookmarks.reviews/?s=${encodeURIComponent(query)}`),
+    ]);
+    if (api.status === 'fulfilled') discovered.push(...api.value);
+    else failed = true;
+    if (search.status === 'fulfilled' && search.value) discovered.push(...extractBookMarksReviewLinks(search.value));
+    else if (search.status === 'rejected') failed = true;
+  }));
+  try {
+    const searched = await tryBookMarksCandidates([...new Set(discovered)].slice(0, 8), title, author);
+    if (searched.reviews.length) return searched;
+  } catch { failed = true; }
+  if (failed) throw new Error('Book Marks unavailable');
   return { reviews: [], source: null, sourceUrl: null };
 }
 
 async function tryBookMarksCandidates(urls: string[], title: string, author: string): Promise<ReceptionResult> {
-  for (const candidate of urls) {
-    const pageUrl = candidate.includes('/reviews/all/')
-      ? candidate
-      : candidate.replace('/reviews/', '/reviews/all/');
+  const pages = [...new Set(urls.map(url => url.includes('/reviews/all/') ? url : url.replace('/reviews/', '/reviews/all/')))];
+  const results = await Promise.allSettled(pages.map(async pageUrl => {
     const html = await fetchHtml(pageUrl);
-    if (!html) continue;
-    if (!matchesBook(html, title, author)) continue;
+    if (!html || !matchesBook(html, title, author)) return null;
     const reviews = parseBookMarksReviews(html);
-    if (reviews.length) {
-      const canonical = pageUrl.replace('/reviews/all/', '/reviews/');
-      return {
-        reviews: reviews.slice(0, 3),
-        source: 'bookmarks',
-        sourceUrl: canonical,
-        isbn13: extractBookMarksIsbn(html),
-      };
-    }
+    return reviews.length ? {
+      reviews: reviews.slice(0, 3), source: 'bookmarks' as const,
+      sourceUrl: pageUrl.replace('/reviews/all/', '/reviews/'), isbn13: extractBookMarksIsbn(html),
+    } : null;
+  }));
+  for (const result of results) {
+    if (result.status === 'fulfilled' && result.value) return result.value;
   }
+  if (results.some(result => result.status === 'rejected')) throw new Error('Book Marks candidate unavailable');
   return { reviews: [], source: null, sourceUrl: null };
 }
 
@@ -138,8 +162,9 @@ async function discoverBookMarksViaWpApi(query: string) {
   try {
     const url = `https://bookmarks.reviews/wp-json/wp/v2/search?search=${encodeURIComponent(query)}&per_page=20&subtype=any`;
     const response = await fetch(url, {
+      signal: AbortSignal.timeout(12000),
       headers: {
-        'User-Agent': 'Reading/0.1.4 (+https://mojocolony.github.io/reading/)',
+        'User-Agent': 'Reading/0.1.6 (+https://reading.mojocolony.com/)',
         'Accept': 'application/json',
       },
     });
@@ -206,7 +231,7 @@ function matchesBook(html: string, title: string, author: string) {
   const pageTitle = titleMatch ? cleanText(titleMatch[1]) : '';
   const wantedTitle = normalizeText(title);
   const foundTitle = normalizeText(pageTitle);
-  const titleOk = foundTitle === wantedTitle || foundTitle.startsWith(wantedTitle) || wantedTitle.startsWith(foundTitle);
+  const titleOk = Boolean(foundTitle && wantedTitle) && (foundTitle === wantedTitle || foundTitle.startsWith(`${wantedTitle} `) || wantedTitle.startsWith(`${foundTitle} `));
   if (!titleOk) return false;
 
   const beforeReviews = cleanText(html.slice(0, Math.max(0, html.search(/What\s+The\s+Reviewers\s+Say/i))));
@@ -308,6 +333,135 @@ function parseBookMarksReviews(html: string): ReviewExcerpt[] {
   return dedupeReviews(reviews);
 }
 
+const REVIEW_OUTLETS: Record<string, string> = {
+  'kirkusreviews.com': 'Kirkus Reviews',
+  'publishersweekly.com': 'Publishers Weekly',
+  'nytimes.com': 'The New York Times',
+  'washingtonpost.com': 'The Washington Post',
+  'theguardian.com': 'The Guardian',
+  'newyorker.com': 'The New Yorker',
+  'christianitytoday.com': 'Christianity Today',
+  'thetimes.com': 'The Times',
+  'theatlantic.com': 'The Atlantic',
+  'latimes.com': 'Los Angeles Times',
+  'bostonglobe.com': 'The Boston Globe',
+  'wsj.com': 'The Wall Street Journal',
+  'ft.com': 'Financial Times',
+  'popmatters.com': 'PopMatters',
+};
+
+function professionalOutlet(value: string): string | null {
+  try {
+    const u = new URL(value);
+    if (u.protocol !== 'https:') return null;
+    return Object.entries(REVIEW_OUTLETS).find(([host]) => u.hostname === host || u.hostname.endsWith(`.${host}`))?.[1] ?? null;
+  } catch { return null; }
+}
+
+function jsonLdObjects(html: string): any[] {
+  const objects: any[] = [];
+  function visit(value: any) {
+    if (Array.isArray(value)) { value.forEach(visit); return; }
+    if (!value || typeof value !== 'object') return;
+    objects.push(value);
+    if (value['@graph']) visit(value['@graph']);
+  }
+  for (const match of html.matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+    try { visit(JSON.parse(match[1])); } catch {}
+  }
+  return objects;
+}
+
+function metadata(html: string, key: string) {
+  for (const match of html.matchAll(/<meta\b[^>]*>/gi)) {
+    const attrs = Object.fromEntries([...match[0].matchAll(/([\w:-]+)\s*=\s*(["'])(.*?)\2/g)].map(a => [a[1].toLowerCase(), a[3]]));
+    if (attrs.property === key || attrs.name === key) return cleanText(attrs.content ?? '');
+  }
+  return '';
+}
+
+function titleMatches(found: string, wanted: string) {
+  const a = normalizeText(found);
+  const b = normalizeText(wanted.split(':')[0]);
+  return Boolean(a && b) && (a === b || a.startsWith(`${b} `) || a.includes(` ${b} `) || a.endsWith(` ${b}`));
+}
+
+// Keep short excerpts and never infer a rating from an outlet's marketing metadata.
+function shortReviewExcerpt(text: string) {
+  const words = cleanInline(text).replace(/^[“"]|[”"]$/g, '').split(/\s+/);
+  return words.length > 25 ? `${words.slice(0, 25).join(' ')}…` : words.join(' ');
+}
+
+function parseProfessionalReview(html: string, url: string, title: string, author: string): ReceptionResult {
+  const empty: ReceptionResult = { reviews: [], source: null, sourceUrl: null };
+  const outlet = professionalOutlet(url);
+  if (!outlet) return empty;
+  const objects = jsonLdObjects(html);
+  const namedAuthor = (a: any): string => Array.isArray(a) ? a.map(namedAuthor).join(' ') : typeof a === 'string' ? a : String(a?.name ?? '');
+  const hasType = (o: any, type: string) => [o?.['@type']].flat().includes(type);
+  const matchingBook = objects.find(o => hasType(o, 'Book') && titleMatches(String(o.name ?? ''), title) && normalizeText(namedAuthor(o.author)) === normalizeText(author));
+  const embeddedReview = [matchingBook?.review].flat().find(r => r && typeof r === 'object');
+  let text = '';
+  let reviewer: string | null = null;
+  if (matchingBook && embeddedReview?.reviewBody) {
+    text = outlet === 'Kirkus Reviews' ? metadata(html, 'og:description') : '';
+    text ||= cleanText(embeddedReview.reviewBody);
+    const credit = namedAuthor(embeddedReview.author);
+    reviewer = credit && credit !== outlet ? credit : null;
+  } else {
+    const item = objects.find(o => ['Review', 'Article', 'NewsArticle'].some(t => hasType(o, t)) && titleMatches(String(o.headline ?? o.name ?? ''), title));
+    // A real review page must identify the book and its author, not just a recommendation in a sidebar.
+    const pageTitle = item?.headline ?? metadata(html, 'og:title');
+    const isReview = hasType(item, 'Review') || /review/i.test(new URL(url).pathname) || /\breview\b/i.test(pageTitle);
+    const content = [item?.articleBody, item?.reviewBody, item?.description, metadata(html, 'og:description'), metadata(html, 'description')].filter(Boolean).join(' ');
+    if (!isReview || !titleMatches(String(pageTitle), title) || !normalizeText(cleanText(content)).includes(normalizeText(author))) return empty;
+    text = metadata(html, 'og:description') || cleanText(item?.description ?? item?.reviewBody ?? '');
+    reviewer = namedAuthor(item?.author) || null;
+  }
+  if (!text || text.length < 20) return empty;
+  const isbn = String(matchingBook?.isbn ?? '').replace(/[^0-9]/g, '');
+  return {
+    reviews: [{ rating: null, reviewer, outlet, excerpt: shortReviewExcerpt(text), url }],
+    source: 'reviews', sourceUrl: url,
+    isbn13: /^\d{13}$/.test(isbn) ? isbn : null,
+  };
+}
+
+async function discoverProfessionalLinks(title: string, author: string): Promise<string[]> {
+  const query = `${title.split(':')[0]} ${author} book review`;
+  const response = await fetch(`https://www.bing.com/search?format=rss&q=${encodeURIComponent(query)}`, { signal: AbortSignal.timeout(12000) });
+  if (!response.ok) throw new Error(`Review discovery: HTTP ${response.status}`);
+  const xml = await response.text();
+  if (!/<rss\b/i.test(xml)) throw new Error('Review discovery unavailable');
+  const urls: string[] = [];
+  for (const match of xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)) {
+    const link = decodeEntities(match[1].match(/<link>([\s\S]*?)<\/link>/i)?.[1] ?? '').trim();
+    if (professionalOutlet(link)) urls.push(link);
+  }
+  return [...new Set(urls)].slice(0, 6);
+}
+
+async function fetchProfessionalReception(title: string, author: string, isbn13?: string | null): Promise<ReceptionResult> {
+  const titleSlugs = [...new Set([slugify(title.split(':')[0]), slugify(title)])].filter(Boolean);
+  const urls = titleSlugs.map(slug => `https://www.kirkusreviews.com/book-reviews/${slugify(author)}/${slug}/`);
+  if (isbn13 && /^\d{13}$/.test(isbn13)) urls.push(`https://www.publishersweekly.com/${isbn13}`);
+  let failures = 0;
+  async function read(url: string): Promise<ReceptionResult> {
+    try {
+      const html = await fetchHtml(url);
+      return html ? parseProfessionalReview(html, url, title, author) : { reviews: [], source: null, sourceUrl: null };
+    } catch { failures += 1; return { reviews: [], source: null, sourceUrl: null }; }
+  }
+  const direct = await Promise.all(urls.map(read));
+  let discovered: string[] = [];
+  try { discovered = await discoverProfessionalLinks(title, author); } catch { failures += 1; }
+  const results = [...direct, ...await Promise.all(discovered.filter(url => !urls.includes(url)).map(read))];
+  const reviews = dedupeReviews(results.flatMap(r => r.reviews)).slice(0, 3);
+  if (reviews.length) return { reviews, source: 'reviews', sourceUrl: reviews[0].url ?? null, isbn13: results.find(r => r.isbn13)?.isbn13 ?? null };
+  if (failures) throw new Error('Independent review sources unavailable');
+  return { reviews: [], source: null, sourceUrl: null };
+}
+
 async function fetchHachettePraise(title: string, author: string, isbn13?: string | null): Promise<ReceptionResult> {
   if (!isbn13 || !/^\d{13}$/.test(isbn13)) return { reviews: [], source: null, sourceUrl: null };
   const authorSlug = slugify(author);
@@ -319,12 +473,16 @@ async function fetchHachettePraise(title: string, author: string, isbn13?: strin
     `https://www.hbglibrary.com/titles/${authorSlug}/${titleSlug}/${isbn13}/`,
   ];
 
-  for (const url of candidates) {
+  const results = await Promise.allSettled(candidates.map(async url => {
     const html = await fetchHtml(url);
-    if (!html) continue;
+    if (!html) return null;
     const reviews = parsePublisherPraise(html);
-    if (reviews.length) return { reviews: reviews.slice(0, 3), source: 'publisher', sourceUrl: url };
+    return reviews.length ? { reviews: reviews.slice(0, 3), source: 'publisher' as const, sourceUrl: url } : null;
+  }));
+  for (const result of results) {
+    if (result.status === 'fulfilled' && result.value) return result.value;
   }
+  if (results.some(result => result.status === 'rejected')) throw new Error('Publisher review source unavailable');
   return { reviews: [], source: null, sourceUrl: null };
 }
 
@@ -354,21 +512,19 @@ function parsePublisherPraise(html: string): ReviewExcerpt[] {
 }
 
 async function fetchHtml(url: string) {
-  try {
-    const response = await fetch(url, {
-      redirect: 'follow',
-      headers: {
-        'User-Agent': 'Reading/0.1.4 (+https://mojocolony.github.io/reading/)',
-        'Accept': 'text/html,application/xhtml+xml',
-      },
-    });
-    if (!response.ok) return null;
-    const type = response.headers.get('content-type') ?? '';
-    if (!type.includes('text/html')) return null;
-    return await response.text();
-  } catch {
-    return null;
-  }
+  const response = await fetch(url, {
+    redirect: 'follow',
+    signal: AbortSignal.timeout(12000),
+    headers: {
+      'User-Agent': 'Reading/0.1.6 (+https://reading.mojocolony.com/)',
+      'Accept': 'text/html,application/xhtml+xml',
+    },
+  });
+  if ([404, 410].includes(response.status)) return null;
+  if (!response.ok) throw new Error(`${new URL(url).hostname}: HTTP ${response.status}`);
+  const type = response.headers.get('content-type') ?? '';
+  if (!type.includes('text/html')) throw new Error(`${new URL(url).hostname}: unexpected content type`);
+  return await response.text();
 }
 
 function htmlToLines(html: string) {
@@ -460,7 +616,8 @@ function inferSource(url?: string | null): ReceptionResult['source'] {
   if (!url) return null;
   try {
     const host = new URL(url).hostname;
-    if (host.endsWith('bookmarks.reviews')) return 'bookmarks';
+    if (host === 'bookmarks.reviews' || host.endsWith('.bookmarks.reviews')) return 'bookmarks';
+    if (professionalOutlet(url)) return 'reviews';
     return 'publisher';
   } catch {
     return null;

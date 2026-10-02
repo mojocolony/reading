@@ -24,7 +24,7 @@ export async function refreshCriticalReception(root, books, onResolvedBookMarksU
     if (!pending.has(bookId)) {
       pending.set(bookId, loadReception(bookId)
         .then(result => {
-          memoryCache.set(bookId, result);
+          if (result?.reviews?.length) memoryCache.set(bookId, result);
           if (result?.source === 'bookmarks' && result?.sourceUrl) {
             onResolvedBookMarksUrl(bookId, result.sourceUrl);
           }
@@ -82,10 +82,20 @@ function renderReception(region, result) {
     excerpt.textContent = `“${String(review?.excerpt ?? '').trim()}”`;
 
     item.append(meta, excerpt);
+    const reviewUrl = validHttpUrl(review?.url);
+    if (reviewUrl) {
+      const link = document.createElement('a');
+      link.className = 'critical-reception-source';
+      link.href = reviewUrl;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = 'Read review ↗';
+      item.append(link);
+    }
     region.append(item);
   }
 
-  if (result?.sourceUrl) {
+  if (result?.sourceUrl && result.source !== 'reviews') {
     const link = document.createElement('a');
     link.className = 'critical-reception-source';
     link.href = result.sourceUrl;

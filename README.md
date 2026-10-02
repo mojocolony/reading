@@ -2,7 +2,7 @@
 
 Reading is a deliberately lightweight personal book tracker modeled on Watching.
 
-Version: **0.1.0**
+Version: **0.1.1**
 
 ## Core structure
 
@@ -47,7 +47,7 @@ Email + password with persistent Supabase sessions, matching Watching.
 
 ## Metadata
 
-Open Library is used for low-volume search and book metadata. Descriptions are cached when a book is added. Manual entry remains available when metadata lookup is unavailable.
+Open Library is the primary low-volume search source, with Google Books as a fallback for ambiguous, sparse, or missing results and ISBN-aware lookup. Descriptions are cached when a book is added. Manual entry remains available when metadata lookup is unavailable.
 
 Book Marks review content is loaded through its official ISBN-based widget. Reading does not scrape Book Marks.
 
@@ -77,6 +77,7 @@ Applied migrations:
 
 - `20261002140619_create_reading_tables.sql`
 - `20261002140656_authorize_reading_user.sql`
+- `20261002150600_reading_v011_googlebooks_metadata_source.sql`
 
 Supabase's post-change security advisor reported no Reading-specific security findings. Existing project-wide advisories for other apps/settings are unchanged.
 

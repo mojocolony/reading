@@ -18,6 +18,8 @@ export function normalizeSearchDoc(doc = {}) {
   const amazonIds = [...new Set((doc.id_amazon ?? []).map(String).map(v => v.trim()).filter(Boolean))];
 
   return {
+    source: 'openlibrary',
+    sourceId: workKey,
     workKey,
     title: String(doc.title ?? '').trim(),
     authors: Array.isArray(doc.author_name) ? doc.author_name.map(String).map(v => v.trim()).filter(Boolean) : [],
@@ -45,11 +47,13 @@ export function buildAmazonCaUrl(result, isbn13 = chooseIsbn13(result)) {
 export async function searchBooks(query, signal) {
   const q = String(query ?? '').trim();
   if (q.length < 2) return [];
+  const compact = q.replace(/[^0-9Xx]/g, '');
+  const isIsbn = /^\d{13}$/.test(compact) || /^\d{9}[\dXx]$/.test(compact);
   const params = new URLSearchParams({
-    q,
     limit: '12',
     fields: 'key,title,author_name,first_publish_year,isbn,id_amazon',
   });
+  params.set(isIsbn ? 'isbn' : 'q', isIsbn ? compact : q);
   let response;
   try {
     response = await fetch(`${SEARCH_URL}?${params}`, { signal });

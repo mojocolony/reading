@@ -4,7 +4,7 @@ import { changedPlacements, moveBook } from './domain/ordering.js';
 import { normalizeBook, normalizeDescription, normalizeIsbn13, normalizeYear } from './domain/books.js';
 import { getCurrentUser, signIn, signOut } from './services/auth.js';
 import { getSupabaseClient } from './services/supabase.js';
-import { hydrateSearchResult, searchBooks } from './services/open-library.js';
+import { hydrateSearchResult, searchBooks } from './services/book-search.js';
 import { refreshBookMarksWidgets } from './services/bookmarks-widget.js';
 import { createRepository } from './data/repository.js';
 import { clearCachedSnapshot, readCachedSnapshot, writeCachedSnapshot } from './storage/cache.js';

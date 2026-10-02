@@ -2,7 +2,7 @@
 
 Reading is a deliberately lightweight personal book tracker modeled on Watching.
 
-Version: **0.1.2**
+Version: **0.1.3**
 
 ## Core structure
 
@@ -47,7 +47,7 @@ Email + password with persistent Supabase sessions, matching Watching.
 
 ## Metadata
 
-Apple Books, Google Books, and Open Library are searched together and deduplicated. Apple Books improves coverage of current commercial releases, while Google Books and Open Library supplement ISBNs and metadata. Weak title/author matches are suppressed. Subtitles are folded into displayed/stored titles when supplied by the source. Descriptions are cached when a book is added. Manual entry remains available when metadata lookup is unavailable.
+Apple Books, Google Books, and Open Library are searched together and deduplicated. Apple Books improves coverage of current commercial releases, while Google Books and Open Library supplement ISBNs and metadata. Weak title/author matches are suppressed. Title-only records are merged with matching expanded title/subtitle records from another provider when author and publication year agree, so subtitles are preserved whenever a source supplies them. Descriptions are cached when a book is added. Manual entry remains available when metadata lookup is unavailable.
 
 Book Marks review content is loaded through its official ISBN-based widget. Reading does not scrape Book Marks.
 

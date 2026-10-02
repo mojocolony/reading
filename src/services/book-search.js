@@ -100,8 +100,22 @@ export function relevanceScore(query, result) {
 function sameBook(a, b) {
   const aIsbns = new Set(a?.isbn13Candidates ?? []);
   if ((b?.isbn13Candidates ?? []).some(isbn => aIsbns.has(isbn))) return true;
-  return normalizeText(a?.title) === normalizeText(b?.title)
-    && normalizeText(a?.authors?.[0]) === normalizeText(b?.authors?.[0]);
+
+  const aAuthor = normalizeText(a?.authors?.[0]);
+  const bAuthor = normalizeText(b?.authors?.[0]);
+  if (!aAuthor || aAuthor !== bAuthor) return false;
+
+  const aTitle = normalizeText(a?.title);
+  const bTitle = normalizeText(b?.title);
+  if (!aTitle || !bTitle) return false;
+  if (aTitle === bTitle) return true;
+
+  const oneIsExpandedTitle = aTitle.startsWith(`${bTitle} `) || bTitle.startsWith(`${aTitle} `);
+  if (!oneIsExpandedTitle) return false;
+
+  const aYear = Number(a?.firstPublicationYear) || null;
+  const bYear = Number(b?.firstPublicationYear) || null;
+  return !aYear || !bYear || Math.abs(aYear - bYear) <= 1;
 }
 
 function enrichResult(primary, secondary) {

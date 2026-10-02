@@ -142,6 +142,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visib
 .critical-review-meta { color: var(--muted); font-size: .66em; line-height: 1.45; }
 .critical-review-excerpt { margin: 0; color: var(--text); font-size: .76em; line-height: 1.58; }
 .critical-reception-source { width: fit-content; color: var(--muted); font-size: .66em; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.critical-reception-status { margin: 0; color: var(--muted); font-size: .66em; line-height: 1.45; }
+.critical-reception-refresh { width: fit-content; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: .66em; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.critical-reception-refresh:disabled { opacity: .6; cursor: wait; }
 
 .floating-pill {
   position: fixed; right: max(18px, calc((100vw - 780px) / 2 + 24px)); bottom: calc(22px + env(safe-area-inset-bottom));

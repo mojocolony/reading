@@ -1,10 +1,13 @@
 {
   "name": "reading",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true,
   "type": "module",
   "scripts": {
     "test": "node --test",
     "serve": "python3 -m http.server 4173"
+  },
+  "devDependencies": {
+    "linkedom": "0.18.12"
   }
 }

@@ -5,7 +5,7 @@ import { normalizeBook, normalizeDescription, normalizeIsbn13, normalizeYear } f
 import { getCurrentUser, signIn, signOut } from './services/auth.js';
 import { getSupabaseClient } from './services/supabase.js';
 import { hydrateSearchResult, searchBooks } from './services/book-search.js';
-import { refreshCriticalReception } from './services/critical-reception.js';
+import { refreshCriticalReception, clearCriticalReceptionMemoryCache } from './services/critical-reception.js';
 import { createRepository } from './data/repository.js';
 import { clearCachedSnapshot, readCachedSnapshot, writeCachedSnapshot } from './storage/cache.js';
 import { readPreferences, writePreferences } from './storage/preferences.js';
@@ -475,6 +475,7 @@ async function handleSignOut() {
     return;
   }
   try { await signOut(); } catch {}
+  clearCriticalReceptionMemoryCache();
   currentUser = null;
   repository = null;
   offlineReadOnly = false;
@@ -486,6 +487,7 @@ async function handleSignOut() {
 async function loadCloudUser(user) {
   offlineReadOnly = false;
   currentUser = user;
+  clearCriticalReceptionMemoryCache();
   const client = await getSupabaseClient();
   if (!client) throw new Error('Cloud sync is not configured.');
   repository = createRepository(client);

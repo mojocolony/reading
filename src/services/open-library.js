@@ -1,4 +1,4 @@
-import { normalizeDescription, normalizeIsbn13, normalizeYear } from '../domain/books.js';
+import { combineTitleSubtitle, normalizeDescription, normalizeIsbn13, normalizeYear } from '../domain/books.js';
 
 const SEARCH_URL = 'https://openlibrary.org/search.json';
 const WORK_BASE = 'https://openlibrary.org';
@@ -21,7 +21,7 @@ export function normalizeSearchDoc(doc = {}) {
     source: 'openlibrary',
     sourceId: workKey,
     workKey,
-    title: String(doc.title ?? '').trim(),
+    title: combineTitleSubtitle(doc.title, doc.subtitle),
     authors: Array.isArray(doc.author_name) ? doc.author_name.map(String).map(v => v.trim()).filter(Boolean) : [],
     firstPublicationYear: normalizeYear(doc.first_publish_year),
     isbn13Candidates: isbns,
@@ -51,7 +51,7 @@ export async function searchBooks(query, signal) {
   const isIsbn = /^\d{13}$/.test(compact) || /^\d{9}[\dXx]$/.test(compact);
   const params = new URLSearchParams({
     limit: '12',
-    fields: 'key,title,author_name,first_publish_year,isbn,id_amazon',
+    fields: 'key,title,subtitle,author_name,first_publish_year,isbn,id_amazon',
   });
   params.set(isIsbn ? 'isbn' : 'q', isIsbn ? compact : q);
   let response;

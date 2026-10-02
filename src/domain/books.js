@@ -1,6 +1,18 @@
 const VALID_STATUSES = new Set(['now_reading', 'queued', 'archived']);
 const VALID_CATEGORIES = new Set(['fiction', 'nonfiction']);
 
+export function combineTitleSubtitle(title, subtitle) {
+  const base = String(title ?? '').trim();
+  const sub = String(subtitle ?? '').trim();
+  if (!base) return sub;
+  if (!sub) return base;
+  const simplify = value => String(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const simpleBase = simplify(base);
+  const simpleSub = simplify(sub);
+  if (!simpleSub || simpleBase.includes(simpleSub)) return base;
+  return `${base}: ${sub}`;
+}
+
 export function normalizeBook(raw = {}) {
   return {
     id: raw.id ?? null,

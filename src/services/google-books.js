@@ -1,4 +1,4 @@
-import { normalizeDescription, normalizeIsbn13, normalizeYear } from '../domain/books.js';
+import { combineTitleSubtitle, normalizeDescription, normalizeIsbn13, normalizeYear } from '../domain/books.js';
 
 const SEARCH_URL = 'https://www.googleapis.com/books/v1/volumes';
 
@@ -25,7 +25,7 @@ export function normalizeGoogleVolume(item = {}) {
   return {
     source: 'googlebooks',
     sourceId: String(item.id ?? '').trim() || null,
-    title: String(info.title ?? '').trim(),
+    title: combineTitleSubtitle(info.title, info.subtitle),
     authors: Array.isArray(info.authors) ? info.authors.map(String).map(v => v.trim()).filter(Boolean) : [],
     firstPublicationYear: normalizeYear(String(info.publishedDate ?? '').slice(0, 4)),
     isbn13Candidates: [...new Set(isbn13Candidates)].sort(),

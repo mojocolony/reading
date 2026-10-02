@@ -2,7 +2,7 @@
 
 Reading is a deliberately lightweight personal book tracker modeled on Watching.
 
-Version: **0.1.3**
+Version: **0.1.4**
 
 ## Core structure
 
@@ -22,7 +22,7 @@ Each row shows title, author, first-publication year, and a labelled Book Marks 
 
 Expanding a book can show:
 - cached **About** text
-- Book Marks **Critical Reception** through the official ISBN widget when supported
+- cached **Critical Reception** with short, attributed professional-review excerpts
 
 ## Nonfiction view
 
@@ -49,7 +49,7 @@ Email + password with persistent Supabase sessions, matching Watching.
 
 Apple Books, Google Books, and Open Library are searched together and deduplicated. Apple Books improves coverage of current commercial releases, while Google Books and Open Library supplement ISBNs and metadata. Weak title/author matches are suppressed. Title-only records are merged with matching expanded title/subtitle records from another provider when author and publication year agree, so subtitles are preserved whenever a source supplies them. Descriptions are cached when a book is added. Manual entry remains available when metadata lookup is unavailable.
 
-Book Marks review content is loaded through its official ISBN-based widget. Reading does not scrape Book Marks.
+Critical Reception is resolved server-side by the authenticated `reading-reception` Edge Function. It first tries Book Marks by known URL, title-derived URL, and title/author search, then falls back to publisher praise when supported. Up to three short attributed excerpts are cached on the Reading book record. Successful Book Marks matches also replace the row's Amazon fallback link with the Book Marks page.
 
 ## Local/demo mode
 
@@ -79,6 +79,7 @@ Applied migrations:
 - `20261002140656_authorize_reading_user.sql`
 - `20261002150600_reading_v011_googlebooks_metadata_source.sql`
 - `20261002152900_reading_v012_applebooks_metadata_source.sql`
+- `20261002154200_reading_v014_critical_reception_cache.sql`
 
 Supabase's post-change security advisor reported no Reading-specific security findings. Existing project-wide advisories for other apps/settings are unchanged.
 

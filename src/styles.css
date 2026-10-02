@@ -136,8 +136,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visib
 .book-description, .detail-empty { margin: 0; color: var(--text); font-size: .78em; line-height: 1.58; }
 .detail-empty { color: var(--muted); }
 .critical-reception { min-height: 24px; }
-.bm-reviews { max-width: 100%; font-family: Georgia, serif; font-size: 14px; }
-.bm-reviews:empty::after { content: "Loading Book Marks…"; color: var(--dim); font: 400 .72em/1.5 "IBM Plex Mono", monospace; }
+.critical-reception-content { display: grid; gap: 14px; }
+.critical-review { display: grid; gap: 5px; }
+.critical-review + .critical-review { padding-top: 14px; border-top: 1px solid var(--line); }
+.critical-review-meta { color: var(--muted); font-size: .66em; line-height: 1.45; }
+.critical-review-excerpt { margin: 0; color: var(--text); font-size: .76em; line-height: 1.58; }
+.critical-reception-source { width: fit-content; color: var(--muted); font-size: .66em; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
 
 .floating-pill {
   position: fixed; right: max(18px, calc((100vw - 780px) / 2 + 24px)); bottom: calc(22px + env(safe-area-inset-bottom));

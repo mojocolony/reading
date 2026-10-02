@@ -5,7 +5,7 @@ import { normalizeBook, normalizeDescription, normalizeIsbn13, normalizeYear } f
 import { getCurrentUser, signIn, signOut } from './services/auth.js';
 import { getSupabaseClient } from './services/supabase.js';
 import { hydrateSearchResult, searchBooks } from './services/book-search.js';
-import { refreshBookMarksWidgets } from './services/bookmarks-widget.js';
+import { refreshCriticalReception } from './services/critical-reception.js';
 import { createRepository } from './data/repository.js';
 import { clearCachedSnapshot, readCachedSnapshot, writeCachedSnapshot } from './storage/cache.js';
 import { readPreferences, writePreferences } from './storage/preferences.js';
@@ -53,7 +53,7 @@ function render() {
   document.documentElement.dataset.theme = state.preferences.themeMode ?? 'system';
   detachDrag?.();
   detachDrag = attachDragController(root, handleDragMove);
-  queueMicrotask(() => refreshBookMarksWidgets(root, handleResolvedBookMarksUrl));
+  queueMicrotask(() => refreshCriticalReception(root, state.books, handleResolvedBookMarksUrl));
 }
 
 function commit(next, { cacheBooks = false, savePrefs = false } = {}) {

@@ -46,10 +46,12 @@ function renderBookDetails(book) {
   const about = book.description
     ? `<section class="book-detail-section"><div class="detail-kicker">ABOUT</div><p class="book-description">${escapeHtml(book.description)}</p></section>`
     : '';
-  const critical = book.isbn13
-    ? `<section class="book-detail-section critical-reception"><div class="detail-kicker">CRITICAL RECEPTION</div><div class="bm-reviews" data-isbn="${escapeHtml(book.isbn13)}" data-width="auto" data-count="3" data-link="true" data-book-id="${escapeHtml(book.id)}"></div></section>`
-    : '';
-  if (!about && !critical) return `<div class="book-details"><p class="detail-empty">No additional information yet.</p></div>`;
+  const critical = `<section class="book-detail-section critical-reception">
+    <div class="detail-kicker">CRITICAL RECEPTION</div>
+    <div class="critical-reception-content" data-region="critical-reception" data-book-id="${escapeHtml(book.id)}">
+      <p class="detail-empty">Loading critical reception…</p>
+    </div>
+  </section>`;
   return `<div class="book-details">${about}${critical}</div>`;
 }
 

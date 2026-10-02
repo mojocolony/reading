@@ -1,4 +1,4 @@
-const CACHE = 'reading-shell-v4';
+const CACHE = 'reading-shell-v5';
 const SHELL = [
   './',
   './index.html',
@@ -15,7 +15,7 @@ const SHELL = [
   './src/services/open-library.js',
   './src/services/google-books.js',
   './src/services/book-search.js',
-  './src/services/bookmarks-widget.js',
+  './src/services/critical-reception.js',
   './src/services/auth.js',
   './src/services/supabase.js',
   './src/data/repository.js',

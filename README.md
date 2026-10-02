@@ -2,7 +2,7 @@
 
 Reading is a deliberately lightweight personal book tracker modeled on Watching.
 
-Version: **0.1.9**
+Version: **0.1.10**
 
 ## Core structure
 
@@ -18,7 +18,7 @@ Version: **0.1.9**
 
 Books are manually ordered by drag. There is no alternate sort mode.
 
-Each row shows title, author, first-publication year, and a labelled Book Marks or Amazon.ca link when available.
+Each row shows title, author, first-publication year, and a labelled Book Marks or Amazon.ca link when available. Font-size choices match Watching at 20, 22 and 24 pixels; descriptions and review excerpts use its .92em detail size, secondary text uses .78em, and form input text uses the full selected size.
 
 Expanding a book can show:
 - cached **About** text

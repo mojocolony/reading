@@ -2,7 +2,7 @@
 
 Reading is a deliberately lightweight personal book tracker modeled on Watching.
 
-Version: **0.1.4**
+Version: **0.1.8**
 
 ## Core structure
 
@@ -43,7 +43,7 @@ The Reading schema was applied to the shared Ticking project on **October 2, 202
 
 ## Authentication
 
-Email + password with persistent Supabase sessions, matching Watching.
+Email + password with persistent Supabase sessions, matching Watching. Sign-in failures distinguish rejected credentials, connection problems, throttling, and failures loading Reading after a successful sign-in. Raw errors are never shown.
 
 ## Metadata
 
@@ -55,7 +55,7 @@ Set `TAVILY_API_KEY` in the Ticking project's **Edge Functions → Secrets** bef
 
 Cache version 2 records normalized title/author identity, completeness and recheck time. Legacy entries are refreshed automatically. Complete results expire after seven days; partial results after one day. The **Refresh reviews** control bypasses both positive caches. Empty searches are never persisted, and outages preserve useful saved reception. Database writes check the captured title and author to avoid applying an old lookup after an edit. Browser caches reset when accounts change and respect server expiry.
 
-Deployment acceptance is still pending: fixture regression tests and parsing real source HTML do not establish that the signed-in deployed app automatically succeeds. See `docs/superpowers/plans/2026-10-02-reception-v2.md`.
+The deployed resolver has automatically saved version-2 results for Biological War (three outlets), Trans (two outlets), and Rock (three outlets). Full deployment acceptance is still pending: missing-ISBN and ambiguous-title cases still need authenticated app verification, alongside user-visible checks of inaccessible-source handling. See `docs/superpowers/plans/2026-10-02-reception-v2.md`.
 
 ## Local/demo mode
 

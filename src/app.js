@@ -2,7 +2,7 @@ import { getPublicConfig, isCloudConfigured } from './config.js';
 import { DEMO_BOOKS } from './demo-data.js';
 import { changedPlacements, moveBook } from './domain/ordering.js';
 import { normalizeBook, normalizeDescription, normalizeIsbn13, normalizeYear } from './domain/books.js';
-import { getCurrentUser, signIn, signOut } from './services/auth.js';
+import { getCurrentUser, signIn, signOut, signInErrorMessage } from './services/auth.js';
 import { getSupabaseClient } from './services/supabase.js';
 import { hydrateSearchResult, searchBooks } from './services/book-search.js';
 import { refreshCriticalReception, clearCriticalReceptionMemoryCache } from './services/critical-reception.js';
@@ -460,11 +460,17 @@ async function handleSignIn() {
   const button = root.querySelector('[data-action="sign-in"]');
   if (!email || !password) return;
   if (button) { button.disabled = true; button.textContent = 'Signing in…'; }
+  let data;
   try {
-    const data = await signIn(email, password);
+    data = await signIn(email, password);
+  } catch (error) {
+    root.innerHTML = renderAuthView(signInErrorMessage(error));
+    return;
+  }
+  try {
     await loadCloudUser(data.user);
   } catch {
-    root.innerHTML = renderAuthView('Email or password was not accepted.');
+    root.innerHTML = renderAuthView('Signed in, but Reading could not load. Reload and try again.');
   }
 }
 

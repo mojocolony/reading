@@ -68,7 +68,7 @@ test('upstream failure is retryable and is never written as an empty successful 
 });
 
 test('a current complete cached result remains usable without network', async () => {
-  const row = { ...book, critical_reception: ['Booklist', 'Kirkus Reviews', 'Publishers Weekly'].map(outlet => ({ outlet, excerpt: 'An informative and carefully researched account of an important subject.', reviewer: null, rating: 'Positive' })), critical_reception_meta: { version: 2, bookKey: 'biological war|annie jacobsen', complete: true }, critical_reception_source_url: 'https://bookmarks.reviews/reviews/biological-war/', critical_reception_fetched_at: new Date().toISOString() };
+  const row = { ...book, critical_reception: ['Booklist', 'Kirkus Reviews', 'Publishers Weekly'].map(outlet => ({ outlet, excerpt: 'An informative and carefully researched account of an important subject.', reviewer: null, rating: 'Positive' })), critical_reception_meta: { version: 3, bookKey: 'biological war|annie jacobsen', complete: true }, critical_reception_source_url: 'https://bookmarks.reviews/reviews/biological-war/', critical_reception_fetched_at: new Date().toISOString() };
   const h = harness(row, () => { throw new Error('should not fetch'); });
   const result = await h.invoke();
   assert.equal(result.source, 'bookmarks');
@@ -300,4 +300,28 @@ test('Book Marks enrichment does not overwrite a link edited during lookup', asy
   await lookup;
   assert.equal(h.updates.length, 0);
   assert.equal(row.bookmarks_url, 'https://bookmarks.reviews/reviews/manually-chosen/');
+});
+
+test('Book Marks assessment starts with the requested book rather than an earlier novel', () => {
+  const h = harness();
+  h.context.fixture = '<h2>What The Reviewers Say</h2><p>Rave</p><div>David S. Wallace,</div><div>The New Yorker</div><p>Diaz gives Håkan a clever, vivid and compelling journey in his earlier novel. Trust, in the end, delivers a luminous and thoughtful exploration of money and literary invention.</p>';
+  const result = vm.runInContext('parseBookMarksReviews(fixture, "Trust")', h.context);
+  assert.match(result[0].excerpt, /Trust/);
+  assert.doesNotMatch(result[0].excerpt, /Håkan|earlier novel/);
+});
+
+test('the old excerpt-selection cache is automatically eligible for replacement', async () => {
+  const h = harness({ ...book, critical_reception: [{ outlet: 'Kirkus Reviews', excerpt: 'An earlier cached review that should be improved by the new extractor.' }], critical_reception_meta: { version: 2, bookKey: 'biological war|annie jacobsen', complete: true }, critical_reception_fetched_at: new Date().toISOString() }, withKirkus);
+  const result = await h.invoke();
+  assert.equal(result.cached, false);
+  assert.match(result.reviews[0].excerpt, /rigorously researched/);
+});
+
+test('Book Marks reads structured reviewer and outlet fields independently', () => {
+  const h = harness();
+  h.context.fixture = '<h2>What The Reviewers Say</h2><span itemprop="review"><div class="bookmarks_pullquote_reviewer"><span class="review_rating">Rave</span><span itemprop="author"><a><span itemprop="name">David S. Wallace,</span></a></span><br><a class="bookmarks_source_link">The New Yorker</a></div><div itemprop="reviewBody">Diaz gives Håkan a clever, vivid and compelling journey in his earlier novel. Trust offers a luminous and thoughtful exploration of money and literary invention.</div></span>';
+  const result = vm.runInContext('parseBookMarksReviews(fixture, "Trust")', h.context);
+  assert.equal(result[0].outlet, 'The New Yorker');
+  assert.equal(result[0].reviewer, 'David S. Wallace');
+  assert.match(result[0].excerpt, /Trust/);
 });

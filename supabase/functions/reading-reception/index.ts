@@ -25,7 +25,7 @@ type ReceptionResult = {
   incomplete?: boolean;
 };
 
-const LOOKUP_VERSION = 2;
+const LOOKUP_VERSION = 3;
 const COMPLETE_TTL = 7 * 24 * 60 * 60 * 1000;
 const PARTIAL_TTL = 24 * 60 * 60 * 1000;
 
@@ -181,7 +181,7 @@ async function tryBookMarksCandidates(urls: string[], title: string, author: str
   const results = await Promise.allSettled(pages.map(async pageUrl => {
     const html = await fetchHtml(pageUrl);
     if (!html || !matchesBook(html, title, author)) return null;
-    const reviews = parseBookMarksReviews(html);
+    const reviews = parseBookMarksReviews(html, title);
     return reviews.length ? {
       reviews: reviews.slice(0, 3).map(review => ({ ...review, kind: 'excerpt' as const, url: pageUrl.replace('/reviews/all/', '/reviews/') })), source: 'bookmarks' as const,
       sourceUrl: pageUrl.replace('/reviews/all/', '/reviews/'), isbn13: extractBookMarksIsbn(html),
@@ -278,12 +278,27 @@ function matchesBook(html: string, title: string, author: string) {
   return !wantedAuthor || normalizeText(beforeReviews).includes(wantedAuthor);
 }
 
-function parseBookMarksReviews(html: string): ReviewExcerpt[] {
+function parseBookMarksReviews(html: string, title = ""): ReviewExcerpt[] {
   const start = html.search(/What\s+The\s+Reviewers\s+Say/i);
   if (start < 0) return [];
   const tail = html.slice(start);
   const endMatch = tail.search(/SIMILAR\s+BOOKS/i);
   const segment = endMatch >= 0 ? tail.slice(0, endMatch) : tail.slice(0, 45000);
+  const { document } = parseHTML(segment);
+  const structured: ReviewExcerpt[] = [];
+  const reviewNodes = [...document.querySelectorAll('[itemprop="review"]')];
+  for (const node of reviewNodes) {
+    const body = node.querySelector('[itemprop="reviewBody"]')?.textContent ?? '';
+    const outlet = cleanInline(node.querySelector('.bookmarks_source_link')?.textContent ?? '');
+    const reviewer = cleanInline(node.querySelector('[itemprop="author"] [itemprop="name"]')?.textContent ?? '').replace(/[,;]\s*$/, '');
+    const rating = cleanInline(node.querySelector('.review_rating')?.textContent ?? '');
+    const excerpt = evaluativeExcerpt(body, title);
+    if (outlet && excerpt && /^(Rave|Positive|Mixed|Pan)$/i.test(rating)) {
+      structured.push({ rating: capitalize(rating), reviewer: reviewer || null, outlet, excerpt });
+    }
+  }
+  // Never reinterpret malformed structured credits through flattened page lines.
+  if (reviewNodes.length) return dedupeReviews(structured).slice(0, 5);
   const lines = htmlToLines(segment).filter(line =>
     line &&
     !/^What The Reviewers Say$/i.test(line) &&
@@ -356,7 +371,7 @@ function parseBookMarksReviews(html: string): ReviewExcerpt[] {
       if (excerptParts.join(' ').length > 900) break;
     }
 
-    const excerpt = evaluativeExcerpt(excerptParts.join(' '));
+    const excerpt = evaluativeExcerpt(excerptParts.join(' '), title);
     outlet = cleanInline(outlet);
     if (outlet && excerpt.length >= 24) {
       reviews.push({
@@ -461,12 +476,17 @@ function shortReviewExcerpt(text: string) {
   return words.length > 25 ? `${words.slice(0, 25).join(' ')}…` : words.join(' ');
 }
 
-function evaluativeExcerpt(value: string) {
+function evaluativeExcerpt(value: string, title = "") {
   const text = cleanText(value);
-  const sentences = text.split(/(?<=[.!?])\s+(?=[A-Z“"'])/);
+  const allSentences = text.split(/(?<=[.!?])\s+(?=[A-Z“"'])/);
+  // Reviews can compare an author's earlier book before discussing this one.
+  // When the requested title appears, choose an assessment from that point on.
+  const wanted = normalizeText(title.split(':')[0]);
+  const anchor = wanted ? allSentences.findIndex(sentence => (` ${normalizeText(sentence)} `).includes(` ${wanted} `)) : -1;
+  const sentences = anchor > 0 ? allSentences.slice(anchor) : allSentences;
   const ranked = sentences.map((sentence, index) => {
     const words = sentence.trim().split(/\s+/).length;
-    const signals = sentence.match(/\b(?:best|pleasure|humor|revealing|worthy|funny|tedious|delight|sharp|astute|affecting|ingenious|clever|engrossing|elegant|challenging|vivid|compelling|rigorous(?:ly)?|researched|readable|believable|gripping|powerful|insightful|thoughtful|disturbing|convincing|illuminating|accessible|informative|masterful|moving|nuanced|exhausting|repetitive|flawed|disappointing|uneven|comforting|gruesome|guidance|shallow|original|engaging|beautiful|eloquent|fascinating|lucid|superb|brilliant|banal|clich[eé]|unconvincing|riveting|provocative)\b/gi) ?? [];
+    const signals = sentence.match(/\b(?:best|pleasure|humor|revealing|worthy|funny|tedious|delight|sharp|astute|affecting|ingenious|clever|engrossing|elegant|challenging|vivid|compelling|rigorous(?:ly)?|researched|readable|believable|gripping|powerful|insightful|thoughtful|disturbing|convincing|illuminating|accessible|informative|masterful|moving|luminous|nuanced|exhausting|repetitive|flawed|disappointing|uneven|comforting|gruesome|guidance|shallow|original|engaging|beautiful|eloquent|fascinating|lucid|superb|brilliant|banal|clich[eé]|unconvincing|riveting|provocative)\b/gi) ?? [];
     const contrast = /\b(?:but|although|however|yet|despite)\b/i.test(sentence) ? 1 : 0;
     return { sentence: sentence.trim(), score: words >= 5 && signals.length ? signals.length * 2 + contrast : 0, index };
   }).filter(item => item.score > 0).sort((a, b) => b.score - a.score || a.index - b.index);
@@ -489,7 +509,7 @@ function parseProfessionalReview(html: string, url: string, title: string, autho
   let text = '';
   let reviewer: string | null = null;
   if (matchingBook && embeddedReview?.reviewBody) {
-    text = evaluativeExcerpt(embeddedReview.reviewBody);
+    text = evaluativeExcerpt(embeddedReview.reviewBody, title);
     const credit = namedAuthor(embeddedReview.author);
     reviewer = credit && credit !== outlet ? credit : null;
   } else {
@@ -504,7 +524,7 @@ function parseProfessionalReview(html: string, url: string, title: string, autho
     if (!reviewHeadlineMatches(pageTitle, title) || !normalizeText(content).includes(normalizeText(author))) return empty;
     const isReview = hasType(item, 'Review') || /review/i.test(new URL(url).pathname + pageTitle) || /\b(?:book|novel|writing|account)\b/i.test(body);
     if (!isReview) return empty;
-    text = evaluativeExcerpt(body) || evaluativeExcerpt(description);
+    text = evaluativeExcerpt(body, title) || evaluativeExcerpt(description, title);
     reviewer = namedAuthor(item?.author) || document.querySelector('[rel="author"]')?.textContent?.trim() || null;
   }
   if (!text) return empty;

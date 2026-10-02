@@ -43,9 +43,9 @@
 
 ### Task 4: Deployment and actual-app acceptance
 - [x] Run a fresh code review and resolve important findings.
-- [ ] Configure and test the real search provider; deploy only when needed credentials are available.
-- [ ] Exercise authenticated actual-app requests for Biological War, a Book Marks book, a missing-ISBN book, an ambiguous-title book, and inaccessible sources.
-- [ ] Verify no manual review inserts, live frontend matches, and useful results come from the deployed resolver before claiming completion.
+- [x] Configure and test the real search provider; deploy only when needed credentials are available.
+- [x] Exercise authenticated actual-app requests for Biological War, a Book Marks book, a missing-ISBN book, an ambiguous-title book, and inaccessible sources.
+- [x] Verify no manual review inserts, live frontend matches, and useful results come from the deployed resolver before claiming completion.
 
 ## Verification checkpoint
 
@@ -54,3 +54,12 @@
 - Five live source-page checks passed: Biological War at Kirkus and Penguin Random House; Trans by Helen Joyce and Trust by Hernan Diaz at Kirkus; Rock by Chuck Klosterman at Book Marks. This is source-parser validation, not deployed authenticated app acceptance.
 - Reviewer findings covered wrong primary title, mixed-book praise, lookup/edit races and synopsis truncation. Regression tests reproduce each issue, and fixes pass.
 - User confirmed Tavily server secret saved. Provider integration and authenticated live-app acceptance remain deployment checks.
+
+## Authenticated acceptance, October 2
+
+- Actual signed-in production UI displayed reviews for Biological War (3), Trans (2), Rock (3), The American Way of Killing (2), and Trust (3). The Gladwell entry automatically replaced its older single cached quote.
+- Trust was added through Add manually with title, author and year only; ISBN and source URLs were empty. Discovery selected Hernan Diaz's book despite the shared title and populated reviews automatically.
+- That test caught a Book Marks excerpt comparing Diaz's earlier novel. Three new regressions cover selecting discussion of the requested title, structured reviewer/outlet parsing, and refreshing version-2 caches. The deployed correction displayed the New Yorker assessment of Trust, without the earlier-book passage.
+- Cache version 3 preserves the same seven-day complete and one-day partial lifetimes. A live Penguin Random House source timed out during verification; useful reviews remained available, with partial status and refresh controls in the actual app.
+- 49 regression tests pass; independent targeted review found no remaining blockers. Four live parser cases passed; the fifth timed out at the external source rather than returning fabricated content.
+- No review data was manually inserted. Trust remains in Queued Up as the acceptance test record.

@@ -2,7 +2,7 @@
 
 Reading is a deliberately lightweight personal book tracker modeled on Watching.
 
-Version: **0.1.8**
+Version: **0.1.9**
 
 ## Core structure
 
@@ -53,9 +53,9 @@ Critical Reception is resolved server-side by the authenticated `reading-recepti
 
 Set `TAVILY_API_KEY` in the Ticking project's **Edge Functions → Secrets** before deploying v0.1.7. The key stays server-side. Basic search uses one credit per uncached lookup; page verification does not use Tavily Extract. Missing configuration, rate limits and inaccessible sources make the lookup incomplete, never an authoritative negative result.
 
-Cache version 2 records normalized title/author identity, completeness and recheck time. Legacy entries are refreshed automatically. Complete results expire after seven days; partial results after one day. The **Refresh reviews** control bypasses both positive caches. Empty searches are never persisted, and outages preserve useful saved reception. Database writes check the captured title and author to avoid applying an old lookup after an edit. Browser caches reset when accounts change and respect server expiry.
+Cache version 3 records normalized title/author identity, completeness and recheck time. Legacy entries are refreshed automatically. Version 3 also refreshes version-2 excerpts after the Trust acceptance check exposed a comparison to an earlier novel. Structured Book Marks credits are parsed separately, and excerpts start with discussion of the requested title when it is named. Complete results expire after seven days; partial results after one day. The **Refresh reviews** control bypasses both positive caches. Empty searches are never persisted, and outages preserve useful saved reception. Database writes check the captured title and author to avoid applying an old lookup after an edit. Browser caches reset when accounts change and respect server expiry.
 
-The deployed resolver has automatically saved version-2 results for Biological War (three outlets), Trans (two outlets), and Rock (three outlets). Full deployment acceptance is still pending: missing-ISBN and ambiguous-title cases still need authenticated app verification, alongside user-visible checks of inaccessible-source handling. See `docs/superpowers/plans/2026-10-02-reception-v2.md`.
+Authenticated live-app checks verified automatic results for Biological War (three outlets, absent from Book Marks), Trans (two), Rock (three), The American Way of Killing (two, replacing an older thin entry), and Trust (three). Trust was entered through the actual app with no ISBN or source URL, testing a shared short title and missing metadata; the extractor selected Hernan Diaz's book and discovered its Book Marks page. The Trust check exposed a quote about an earlier novel, reproduced in regression tests and corrected before acceptance. Partial-source status and retry controls remain visible when sources fail. No review data was manually inserted. See `docs/superpowers/plans/2026-10-02-reception-v2.md`.
 
 ## Local/demo mode
 

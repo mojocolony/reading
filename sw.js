@@ -1,4 +1,4 @@
-const CACHE = 'reading-shell-v9';
+const CACHE = 'reading-shell-v10';
 const SHELL = [
   './',
   './index.html',

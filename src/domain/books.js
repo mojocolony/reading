@@ -76,6 +76,12 @@ export function normalizeDescription(value) {
     .replace(/&#39;|&apos;/gi, "'")
     .replace(/&lt;/gi, '<')
     .replace(/&gt;/gi, '>')
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => {
+      try { return String.fromCodePoint(Number.parseInt(hex, 16)); } catch { return ''; }
+    })
+    .replace(/&#(\d+);/g, (_, dec) => {
+      try { return String.fromCodePoint(Number(dec)); } catch { return ''; }
+    })
     .replace(/\s+/g, ' ')
     .trim();
   return stripped || null;

@@ -18,6 +18,7 @@ type ReceptionResult = {
   reviews: ReviewExcerpt[];
   source: 'bookmarks' | 'publisher' | null;
   sourceUrl: string | null;
+  isbn13?: string | null;
 };
 
 Deno.serve(async (req: Request) => {
@@ -76,6 +77,7 @@ Deno.serve(async (req: Request) => {
       critical_reception_fetched_at: fetchedAt,
     };
     if (result.source === 'bookmarks' && result.sourceUrl) patch.bookmarks_url = result.sourceUrl;
+    if (!book.isbn13 && result.isbn13) patch.isbn13 = result.isbn13;
 
     const { error: updateError } = await supabase
       .from('reading_books')
@@ -98,12 +100,13 @@ async function fetchBookMarksReception(title: string, author: string, knownUrl?:
 
   const discovered: string[] = [];
   for (const query of [...new Set([`${title} ${author}`.trim(), title].filter(Boolean))]) {
+    discovered.push(...await discoverBookMarksViaWpApi(query));
+
     const searchHtml = await fetchHtml(`https://bookmarks.reviews/?s=${encodeURIComponent(query)}`);
-    if (!searchHtml) continue;
-    discovered.push(...extractBookMarksReviewLinks(searchHtml));
+    if (searchHtml) discovered.push(...extractBookMarksReviewLinks(searchHtml));
   }
 
-  const searched = await tryBookMarksCandidates([...new Set(discovered)].slice(0, 12), title, author);
+  const searched = await tryBookMarksCandidates([...new Set(discovered)].slice(0, 16), title, author);
   if (searched.reviews.length) return searched;
 
   return { reviews: [], source: null, sourceUrl: null };
@@ -120,10 +123,47 @@ async function tryBookMarksCandidates(urls: string[], title: string, author: str
     const reviews = parseBookMarksReviews(html);
     if (reviews.length) {
       const canonical = pageUrl.replace('/reviews/all/', '/reviews/');
-      return { reviews: reviews.slice(0, 3), source: 'bookmarks', sourceUrl: canonical };
+      return {
+        reviews: reviews.slice(0, 3),
+        source: 'bookmarks',
+        sourceUrl: canonical,
+        isbn13: extractBookMarksIsbn(html),
+      };
     }
   }
   return { reviews: [], source: null, sourceUrl: null };
+}
+
+async function discoverBookMarksViaWpApi(query: string) {
+  try {
+    const url = `https://bookmarks.reviews/wp-json/wp/v2/search?search=${encodeURIComponent(query)}&per_page=20&subtype=any`;
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Reading/0.1.4 (+https://mojocolony.github.io/reading/)',
+        'Accept': 'application/json',
+      },
+    });
+    if (!response.ok) return [];
+    const payload = await response.json();
+    if (!Array.isArray(payload)) return [];
+    return payload
+      .map((item: any) => String(item?.url ?? ''))
+      .filter((url: string) => {
+        try {
+          const parsed = new URL(url);
+          return parsed.hostname.endsWith('bookmarks.reviews') && parsed.pathname.includes('/reviews/');
+        } catch {
+          return false;
+        }
+      });
+  } catch {
+    return [];
+  }
+}
+
+function extractBookMarksIsbn(html: string) {
+  const match = html.match(/data-isbn=["'](\d{13})["']/i);
+  return match?.[1] ?? null;
 }
 
 function extractBookMarksReviewLinks(html: string) {
@@ -188,43 +228,65 @@ function parseBookMarksReviews(html: string): ReviewExcerpt[] {
   );
 
   const reviews: ReviewExcerpt[] = [];
-  for (let i = 0; i < lines.length && reviews.length < 5; i++) {
-    const match = lines[i].match(/^(Rave|Positive|Mixed|Pan)\s+(.+)$/i);
-    if (!match) continue;
+  const ratingPattern = /^(Rave|Positive|Mixed|Pan)$/i;
+  const inlinePattern = /^(Rave|Positive|Mixed|Pan)\s+(.+)$/i;
 
-    const rating = capitalize(match[1]);
-    const head = match[2].trim();
+  for (let i = 0; i < lines.length && reviews.length < 5; i++) {
+    const standalone = lines[i].match(ratingPattern);
+    const inline = lines[i].match(inlinePattern);
+    if (!standalone && !inline) continue;
+
+    const rating = capitalize((standalone ?? inline)![1]);
     let reviewer: string | null = null;
     let outlet = '';
-    let excerptStart = i + 1;
+    let cursor = i + 1;
 
-    const comma = head.indexOf(',');
-    if (comma >= 0) {
-      reviewer = head.slice(0, comma).trim() || null;
-      outlet = head.slice(comma + 1).trim();
-      if (!outlet && lines[excerptStart]) {
-        outlet = lines[excerptStart];
-        excerptStart += 1;
-      }
-    } else if (head.endsWith(',')) {
-      reviewer = head.slice(0, -1).trim() || null;
-      outlet = lines[excerptStart] ?? '';
-      excerptStart += 1;
-    } else {
-      const next = lines[excerptStart] ?? '';
-      if (looksLikeExcerpt(next)) {
-        outlet = head;
+    if (inline) {
+      const head = inline[2].trim();
+      const comma = head.indexOf(',');
+      if (comma >= 0) {
+        reviewer = head.slice(0, comma).trim() || null;
+        outlet = head.slice(comma + 1).trim();
       } else {
         reviewer = head || null;
-        outlet = next;
-        excerptStart += 1;
+      }
+    }
+
+    if (!outlet && cursor < lines.length) {
+      const first = cleanInline(lines[cursor]);
+      const second = cleanInline(lines[cursor + 1] ?? '');
+
+      if (reviewer) {
+        if (first && !looksLikeExcerpt(first) && !ratingPattern.test(first)) {
+          outlet = first.replace(/^,+\s*/, '');
+          cursor += 1;
+        }
+      } else if (first) {
+        if (first.endsWith(',')) {
+          reviewer = first.slice(0, -1).trim() || null;
+          cursor += 1;
+          const candidateOutlet = cleanInline(lines[cursor] ?? '');
+          if (candidateOutlet && !looksLikeExcerpt(candidateOutlet) && !ratingPattern.test(candidateOutlet)) {
+            outlet = candidateOutlet;
+            cursor += 1;
+          }
+        } else if (!looksLikeExcerpt(first) && !ratingPattern.test(first)) {
+          if (second && !looksLikeExcerpt(second) && !ratingPattern.test(second)) {
+            reviewer = first;
+            outlet = second;
+            cursor += 2;
+          } else {
+            outlet = first;
+            cursor += 1;
+          }
+        }
       }
     }
 
     const excerptParts: string[] = [];
-    let j = excerptStart;
+    let j = cursor;
     for (; j < lines.length; j++) {
-      if (/^(Rave|Positive|Mixed|Pan)\s+.+/i.test(lines[j])) break;
+      if (ratingPattern.test(lines[j]) || inlinePattern.test(lines[j])) break;
       if (/^(Read Full Review|See All Reviews|SIMILAR BOOKS)/i.test(lines[j])) continue;
       excerptParts.push(lines[j]);
       if (excerptParts.join(' ').length > 900) break;
@@ -233,7 +295,12 @@ function parseBookMarksReviews(html: string): ReviewExcerpt[] {
     const excerpt = trimExcerpt(excerptParts.join(' '), 360);
     outlet = cleanInline(outlet);
     if (outlet && excerpt.length >= 24) {
-      reviews.push({ rating, reviewer: reviewer ? cleanInline(reviewer) : null, outlet, excerpt });
+      reviews.push({
+        rating,
+        reviewer: reviewer ? cleanInline(reviewer) : null,
+        outlet,
+        excerpt,
+      });
     }
     i = Math.max(i, j - 1);
   }
